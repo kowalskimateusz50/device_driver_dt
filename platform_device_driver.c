@@ -10,10 +10,43 @@
 #define WRONLY 0x10
 #define RDWR   0x11
 
+#define MAX_DEVICES 4
+
 #undef pr_fmt
 #define pr_fmt(fmt) "%s :" fmt, __func__
 
+/* Device private data structure */
 
+struct pcdev_private_data
+{
+	char *buffer;
+	int size;
+	const char *serial_number;
+	/* Device permission */
+	int perm;
+	/* Cdev Variable */
+	struct cdev cdev;
+};
+
+	int i;
+/* Driver private data structure */
+
+struct pcdrv_private_data
+{
+	int total_devices;
+
+	struct pcdev_private_data pcdev_data[MAX_DEVICES];
+	/* This hold the device number */
+	dev_t device_number_base;
+
+	/* Declaration class structure pointer */
+	struct class *pcd_class;
+
+	/* Declaration of device structure pointer */
+	struct device *pcd_device;
+};
+
+struct pcdrv_private_data pcdrv_data;
 
 int check_permission(int device_permission, int access_permission)
 {
@@ -99,7 +132,33 @@ struct platform_driver pcd_platform_driver = {
 
 static int __init pcd_init(void)
 {
-  platform_driver_register(&pcd_platform_driver);
+		int ret;
+
+	/* 1.	Dynamically allocate a device number for max devices*/
+	ret = alloc_chrdev_region(&pcdrv_data.device_number_base,0,MAX_DEVICES,"plat-dev");
+	/* 1.e Error handling */
+	if(ret < 0)
+	{
+		pr_err("Chrdev allocation failed\n");
+		return ret;
+	}
+
+	/* 2. Create device class under /sys/class/ */
+	pcdrv_data.pcd_class = class_create(THIS_MODULE, "plat_class");
+	/* 2.e Error handling of this section */
+	if(IS_ERR(pcdrv_data.pcd_class))
+	{
+		/* Print some error info */
+		pr_err("Class creation failed\n");
+		/*Convert pointer to error code int */
+		ret = PTR_ERR(pcdrv_data.pcd_class);
+		unregister_chrdev_region(pcdrv_data.device_number_base,MAX_DEVICES);
+		return ret;
+	}
+
+	/* 3. Register a platform Driver in sysfs*/
+	platform_driver_register(&pcd_platform_driver);
+
 	/* Confirmation of successfully ended initialization */
 	pr_info("Module  was loaded\n");
 
@@ -107,11 +166,18 @@ static int __init pcd_init(void)
 }
 static void __exit pcd_cleanup(void)
 {
-  platform_driver_unregister(&pcd_platform_driver);
+	/* 1. UNregister platform driver in sysfs */
+	platform_driver_unregister(&pcd_platform_driver);
+
+	/* 2. Class destroying */
+	class_destroy(pcdrv_data.pcd_class);
+
+	/* 3. Unregister dynamically allocated device number */
+  unregister_chrdev_region(pcdrv_data.device_number_base,MAX_DEVICES);
+
   /* Some clean-up message */
   pr_info("Module was succesfully unloaded\n");
 }
-
 
 /* Adding function to init call */
 module_init(pcd_init);
