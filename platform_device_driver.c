@@ -5,6 +5,7 @@
 #include<linux/kdev_t.h>
 #include<linux/uaccess.h>
 #include<linux/platform_device.h>
+#include<platform.h>
 
 #define RDONLY 0x1
 #define WRONLY 0x10
@@ -19,23 +20,24 @@
 
 struct pcdev_private_data
 {
+	/* Platform device data */
+	struct pcdev_platform_data pdata;
+	/* Device data buffer */
 	char *buffer;
-	int size;
-	const char *serial_number;
-	/* Device permission */
-	int perm;
+	/* Device number variable */
+	dev_t dev_num;
 	/* Cdev Variable */
 	struct cdev cdev;
 };
 
 	int i;
+
 /* Driver private data structure */
 
 struct pcdrv_private_data
 {
 	int total_devices;
 
-	struct pcdev_private_data pcdev_data[MAX_DEVICES];
 	/* This hold the device number */
 	dev_t device_number_base;
 
@@ -106,15 +108,72 @@ struct file_operations pcd_fops =
 };
 
 /* Function gets called when matched platform device was found */
-int pcd_probe(struct platform_device *pdev)
+int pcd_probe(struct platform_device *dev)
 {
+	/* 1. Get the device platform data */
+	int ret;
+
+	struct pcdev_private_data *dev_data;
+
+	struct pcdev_platform_data *pdata;
+
+	pdata = (pcdev_platform_data*)dev_get_platdata(&dev->dev)
+
+	/* 1.e Error handling */
+	if(!pdata)
+	{
+		pr_info("No platform data available\n")
+		return -EINVAL;
+	}
+	/* 2. Dynamically allocate memory for the device private data */
+
+	dev_data = kzalloc(sizeof(pdev*), GFP_KERNEL);
+
+	/* 2.e Erorr hangling for allocation */
+
+	if(!dev_data)
+	{
+		pr_info("Cannot allocate memory\n");
+		return -ENOMEM;
+	}
+
+	/* 2f. Copy platform data to device data */
+	dev_data -> pdata.size = pdata -> size;
+	dev_data -> pdata.perm = pdata -> permission;
+	dev_data -> pdata.serial_number = pdata -> serial_number;
+	/* Print before copied data */
+
+	pr_info("Device size is: %d\n", dev_data -> pdata.size);
+	pr_info("Device permission is: %d\n", dev_data -> pdata.permission);
+	pr_info("Device serial number is: %s\n", dev_data -> pdata.serial_number);
+
+	/* 3. Dynamically allocate device data buffer */
+	dev_data->buffer = kzalloc(dev_data->pdata.size, GFP_KERNEL);
+
+	/* 3.e Erorr hangling for allocation */
+
+	if(!dev_data->buffer)
+	{
+		pr_info("Cannot allocate memory\n");
+		kfree(pdata);
+		return -ENOMEM;
+	}
+	/* 4. Get device number */
+	dev_data -> pcdrv_data.device_number_base + dev->id;
+
+	/* 5. Cdev init and Cdev add */
+
+	/* 6. Create device file for the detected platform device */
+
+	/* 7. Error handling */
+
   pr_info("Device is detected\n");
 
   return 0;
 }
 
 /* Function gets called when platform device was removed from system */
-int pcd_remove(struct platform_device *pdev)
+int pcd_remove(struct platform_device *dev)
 {
   pr_info("Device is removed\n");
   return 0;
