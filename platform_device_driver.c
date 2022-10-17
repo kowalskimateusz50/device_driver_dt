@@ -287,11 +287,7 @@ int pcd_remove(struct platform_device *pdev)
 	/* 2. Remove a cdev entry from the system */
 	cdev_del(&dev_data -> cdev);
 
-	/* 3. Free the memory held by the device */
-	kfree(dev_data->buffer);
-	kfree(dev_data);
-
-	/*4. Decrement devices counter */
+	/*3. Decrement devices counter */
 	pcdrv_data.total_devices++;
 
   pr_info("Device was removed\n");
@@ -320,7 +316,7 @@ int pcd_probe(struct platform_device *pdev)
 	}
 	/* 2. Dynamically allocate memory for the device private data */
 
-	dev_data = kzalloc(sizeof(*pdev), GFP_KERNEL);
+	dev_data = devm_kzalloc(&pdev -> dev, sizeof(*pdev), GFP_KERNEL);
 
 	/* 2.e Erorr hangling for allocation */
 
@@ -344,7 +340,7 @@ int pcd_probe(struct platform_device *pdev)
 	pr_info("Device serial number is: %s\n", dev_data -> pdata.serial_number);
 
 	/* 3. Dynamically allocate device data buffer */
-	dev_data->buffer = kzalloc(dev_data->pdata.size, GFP_KERNEL);
+	dev_data->buffer = devm_kzalloc(&pdev -> dev, dev_data->pdata.size, GFP_KERNEL);
 
 	/* 3.e Erorr hangling for allocation */
 	if(!dev_data->buffer)
@@ -389,10 +385,10 @@ int pcd_probe(struct platform_device *pdev)
 		cdev_del(&dev_data -> cdev);
 
 	buffer_free:
-	kfree(dev_data-> buffer);
+		devm_kfree(&pdev-> dev, dev_data-> buffer);
 
 	dev_data_free:
-		kfree(dev_data);
+		devm_kfree(&pdev-> dev, dev_data);
 
 	out:
 		pr_info("Device probe failed \n");
