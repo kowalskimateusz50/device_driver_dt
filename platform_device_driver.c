@@ -49,7 +49,9 @@ struct pcdrv_private_data
 	struct device *pcd_device;
 };
 
-struct pcdrv_private_data pcdrv_data;
+struct pcdrv_private_data pcdrv_data = {
+	.total_devices = 0
+};
 
 int check_permission(int device_permission, int access_permission)
 {
@@ -107,6 +109,28 @@ struct file_operations pcd_fops =
 	.release = pcd_release,
 	.owner = THIS_MODULE
 };
+/* Function gets called when platform device was removed from system */
+int pcd_remove(struct platform_device *pdev)
+{
+	struct pcdev_private_data *dev_data = dev_get_drvdata(&pdev -> dev);
+
+	/* 1. Remove a device that was created with device_create() */
+	device_destroy(pcdrv_data.pcd_class, dev_data -> dev_num);
+
+	/* 2. Remove a cdev entry from the system */
+	cdev_del(&dev_data -> cdev);
+
+	/* 3. Free the memory held by the device */
+	kfree(dev_data->buffer);
+	kfree(dev_data);
+
+	/*4. Decrement devices counter */
+	pcdrv_data.total_devices++;
+
+  pr_info("Device was removed\n");
+
+  return 0;
+}
 
 /* Function gets called when matched platform device was found */
 int pcd_probe(struct platform_device *pdev)
@@ -140,8 +164,7 @@ int pcd_probe(struct platform_device *pdev)
 		goto out;
 	}
 	/* 2f. Passing data to remove function by dev_set_drvdata and dev_get_drvdata */
-
-
+	dev_set_drvdata(&pdev-> dev, dev_data);
 
 	/* 2g. Copy platform data to device data */
 	dev_data -> pdata.size = pdata -> size;
@@ -186,6 +209,8 @@ int pcd_probe(struct platform_device *pdev)
 		ret = PTR_ERR(pcdrv_data.pcd_device);
 		goto cdev_del;
 	}
+	/*Increment device counter */
+	pcdrv_data.total_devices++;
 
 	/* Return 0 if execution ends without any errors */
 	pr_info("Module probe function execution successfull");
@@ -207,16 +232,6 @@ int pcd_probe(struct platform_device *pdev)
 		return ret;
 
 }
-
-/* Function gets called when platform device was removed from system */
-int pcd_remove(struct platform_device *dev)
-{
-
-
-  pr_info("Device was removed\n");
-  return 0;
-}
-
 /* Instance of paltform driver representing structure */
 
 struct platform_driver pcd_platform_driver = {
