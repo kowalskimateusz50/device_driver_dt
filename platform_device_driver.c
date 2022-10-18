@@ -6,19 +6,54 @@
 #include <linux/uaccess.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/mod_devicetable.h>
 #include "platform.h"
 
 #define RDONLY 0x1
 #define WRONLY 0x10
 #define RDWR   0x11
 
-#define MAX_DEVICES 4
+#define MAX_DEVICES 10
 
 #undef pr_fmt
 #define pr_fmt(fmt) "%s :" fmt, __func__
 
-/* Device private data structure */
+/* Passing configs parameters into driver */
+struct device_config
+{
+	int config_item1;
+	int config_item2;
+};
 
+/* Enumerators for simplify drivers identyfication */
+enum pcdev_names
+{
+	PCDEVA1X,
+	PCDEVB1X,
+	PCDEVC1X,
+	PCDEVD1X
+};
+
+struct device_config pdevs_config[] =
+{
+	[PCDEVA1X] = {.config_item1 = 60, .config_item2 = 21},
+	[PCDEVB1X] = {.config_item1 = 40, .config_item2 = 11},
+	[PCDEVC1X] = {.config_item1 = 66, .config_item2 = 51},
+	[PCDEVD1X] = {.config_item1 = 16, .config_item2 = 22},
+};
+
+/* Platform devices naming array */
+struct platform_device_id pcdevs_ids[]=
+{
+	[0] = {.name = "pcdev-A1x", .driver_data = PCDEVA1X},
+	[1] = {.name = "pcdev-B1x", .driver_data = PCDEVB1X},
+	[2] = {.name = "pcdev-C1x", .driver_data = PCDEVC1X},
+	[3] = {.name = "pcdev-D1x", .driver_data = PCDEVD1X},
+
+	{ } /* NULL terminated entry */
+};
+
+/* Device private data structure */
 struct pcdev_private_data
 {
 	/* Platform device data */
@@ -311,8 +346,7 @@ int pcd_probe(struct platform_device *pdev)
 	if(!pdata)
 	{
 		pr_info("No platform data available\n");
-		ret = EINVAL;
-		goto out;
+		return -EINVAL;
 	}
 	/* 2. Dynamically allocate memory for the device private data */
 
@@ -323,8 +357,7 @@ int pcd_probe(struct platform_device *pdev)
 	if(!dev_data)
 	{
 		pr_info("Cannot allocate memory\n");
-		ret = ENOMEM;
-		goto out;
+		return -ENOMEM;
 	}
 	/* 2f. Passing data to remove function by dev_set_drvdata and dev_get_drvdata */
 	dev_set_drvdata(&pdev-> dev, dev_data);
@@ -339,6 +372,11 @@ int pcd_probe(struct platform_device *pdev)
 	pr_info("Device permission is: %d\n", dev_data -> pdata.permission);
 	pr_info("Device serial number is: %s\n", dev_data -> pdata.serial_number);
 
+	/* Printing config info */
+
+	pr_info("Device config item 1 is: %d\n", pdevs_config[pdev -> id_entry -> driver_data].config_item1);
+	pr_info("Device config item 2 is: %d\n", pdevs_config[pdev -> id_entry -> driver_data].config_item2);
+
 	/* 3. Dynamically allocate device data buffer */
 	dev_data->buffer = devm_kzalloc(&pdev -> dev, dev_data->pdata.size, GFP_KERNEL);
 
@@ -346,8 +384,7 @@ int pcd_probe(struct platform_device *pdev)
 	if(!dev_data->buffer)
 	{
 		pr_info("Cannot allocate memory\n");
-		ret = ENOMEM;
-		goto dev_data_free;
+		return -ENOMEM;
 	}
 	/* 4. Get device number */
 	dev_data -> dev_num = pcdrv_data.device_number_base + pdev->id;
@@ -361,7 +398,7 @@ int pcd_probe(struct platform_device *pdev)
 	if(ret <0)
 	{
 		pr_err("Cdev add failed \n");
-		goto buffer_free;
+		return ret;
 	}
 	/* 7. Populate the sysfs (/sys/class) with device information */
 	pcdrv_data.pcd_device = device_create(pcdrv_data.pcd_class, NULL, dev_data-> dev_num, NULL,"pcdev-%d", pdev-> id);
@@ -370,7 +407,8 @@ int pcd_probe(struct platform_device *pdev)
 	{
 		pr_err("Device create failed\n");
 		ret = PTR_ERR(pcdrv_data.pcd_device);
-		goto cdev_del;
+		cdev_del(&dev_data -> cdev);
+		return ret;
 	}
 	/*Increment device counter */
 	pcdrv_data.total_devices++;
@@ -379,27 +417,13 @@ int pcd_probe(struct platform_device *pdev)
 	pr_info("Module probe function execution successfull");
 
 	return 0;
-
-	/* 8. Error handling */
-	cdev_del:
-		cdev_del(&dev_data -> cdev);
-
-	buffer_free:
-		devm_kfree(&pdev-> dev, dev_data-> buffer);
-
-	dev_data_free:
-		devm_kfree(&pdev-> dev, dev_data);
-
-	out:
-		pr_info("Device probe failed \n");
-		return ret;
-
 }
-/* Instance of paltform driver representing structure */
 
+/* Instance of paltform driver representing structure */
 struct platform_driver pcd_platform_driver = {
   .probe = pcd_probe,
   .remove = pcd_remove,
+	.id_table = pcdevs_ids,
   .driver = {.name = "pchar-platform-device"}
 };
 
