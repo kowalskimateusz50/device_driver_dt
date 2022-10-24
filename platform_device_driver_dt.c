@@ -7,6 +7,8 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/mod_devicetable.h>
+#include <linux/of.h>
+#include<linux/of_device.h>
 #include "platform.h"
 
 #define RDONLY 0x1
@@ -17,6 +19,10 @@
 
 #undef pr_fmt
 #define pr_fmt(fmt) "%s :" fmt, __func__
+
+
+int pcd_probe(struct platform_device *pdev);
+int pcd_remove(struct platform_device *pdev);
 
 /* Passing configs parameters into driver */
 struct device_config
@@ -45,12 +51,32 @@ struct device_config pdevs_config[] =
 /* Platform devices naming array */
 struct platform_device_id pcdevs_ids[]=
 {
-	[0] = {.name = "pcdev-A1x", .driver_data = PCDEVA1X},
-	[1] = {.name = "pcdev-B1x", .driver_data = PCDEVB1X},
-	[2] = {.name = "pcdev-C1x", .driver_data = PCDEVC1X},
-	[3] = {.name = "pcdev-D1x", .driver_data = PCDEVD1X},
+	{.name = "pcdev-A1x", .driver_data = PCDEVA1X},
+	{.name = "pcdev-B1x", .driver_data = PCDEVB1X},
+	{.name = "pcdev-C1x", .driver_data = PCDEVC1X},
+	{.name = "pcdev-D1x", .driver_data = PCDEVD1X},
 
 	{ } /* NULL terminated entry */
+};
+struct of_device_id org_pcdev_dt_match[] = {
+
+	{.compatible = "pcdev-A1X", .data = (void*)PCDEVA1X},
+	{.compatible = "pcdev-B1X", .data = (void*)PCDEVB1X},
+	{.compatible = "pcdev-C1X", .data = (void*)PCDEVC1X},
+	{.compatible = "pcdev-D1X", .data = (void*)PCDEVD1X},
+
+	{ } /* NULL terminated end */
+};
+
+/* Instance of paltform driver representing structure */
+struct platform_driver pcd_platform_driver = {
+  .probe = pcd_probe,
+  .remove = pcd_remove,
+	.id_table = pcdevs_ids,
+  .driver = {
+		.name = "pchar-platform-device",
+		.of_match_table = org_pcdev_dt_match
+	}
 };
 
 /* Device private data structure */
@@ -314,6 +340,7 @@ struct file_operations pcd_fops =
 /* Function gets called when platform device was removed from system */
 int pcd_remove(struct platform_device *pdev)
 {
+
 	struct pcdev_private_data *dev_data = dev_get_drvdata(&pdev -> dev);
 
 	/* 1. Remove a device that was created with device_create() */
@@ -325,28 +352,97 @@ int pcd_remove(struct platform_device *pdev)
 	/*3. Decrement devices counter */
 	pcdrv_data.total_devices++;
 
-  pr_info("Device was removed\n");
+  dev_info(&pdev->dev, "Device was removed\n");
 
   return 0;
+}
+
+/* This function is returning data from device tree */
+
+struct pcdev_platform_data* pcdev_get_platdata_from_dt(struct device *dev)
+{
+		struct device_node *dev_node = dev->of_node;
+		struct pcdev_platform_data *pdata;
+		if(!dev_node)
+		{
+			/* This probe not happen because of device tree node */
+			return NULL;
+		}
+
+			pdata = devm_kzalloc(dev, sizeof(*pdata),GFP_KERNEL);
+			/* Error if something goes wrong with memory allocation */
+
+			if(!pdata)
+			{
+				dev_info(dev, "Cannot allocate memory\n");
+				return ERR_PTR(-ENOMEM);
+			}
+
+			/* Read serial_number from of_noda data */
+			if(of_property_read_string(dev_node, "org,device-serial-num", &pdata->serial_number))
+			{
+				dev_info(dev, "Missing serial number property\n");
+				return ERR_PTR(-EINVAL);
+			}
+
+			/* Read buffer size from of_node data */
+			if(of_property_read_u32(dev_node, "org,size", &pdata->size))
+			{
+				dev_info(dev, "Missing size property\n");
+				return ERR_PTR(-EINVAL);
+			}
+
+			/* Read permission from of_node data */
+
+			if(of_property_read_u32(dev_node, "org,perm", &pdata->permission))
+			{
+				dev_info(dev, "Missing size property\n");
+				return ERR_PTR(-EINVAL);
+			}
+
+		return pdata;
 }
 
 /* Function gets called when matched platform device was found */
 int pcd_probe(struct platform_device *pdev)
 {
+
+
 	/* 1. Get the device platform data */
+	struct pcdev_private_data *dev_data;
+	struct pcdev_platform_data *pdata;
+	struct device *dev = &pdev -> dev;
+	int driver_data;
 	int ret;
 
-	struct pcdev_private_data *dev_data;
+	dev_info(dev, "Device detected\n");
 
-	struct pcdev_platform_data *pdata;
+	/* Extract data from device tree */
+	pdata = pcdev_get_platdata_from_dt(dev);
 
-	pdata = (struct pcdev_platform_data*)dev_get_platdata(&pdev->dev);
+	/* Check if returned pointer have error code and return this error code */
+	if(IS_ERR(pdata))
+	{
+		return PTR_ERR(pdata);
+	}
 
-	/* 1.e Error handling */
 	if(!pdata)
 	{
-		pr_info("No platform data available\n");
-		return -EINVAL;
+		pdata = (struct pcdev_platform_data*)dev_get_platdata(dev);
+
+		/* 1.e Error handling */
+		if(!pdata)
+		{
+			pr_info("No platform data available\n");
+			return -EINVAL;
+		}
+		driver_data = pdev -> id_entry -> driver_data;
+	}
+	else
+	{
+		/* Extract data from match table of device */
+		driver_data = *((int*)of_device_get_match_data(dev));
+
 	}
 	/* 2. Dynamically allocate memory for the device private data */
 
@@ -374,8 +470,8 @@ int pcd_probe(struct platform_device *pdev)
 
 	/* Printing config info */
 
-	pr_info("Device config item 1 is: %d\n", pdevs_config[pdev -> id_entry -> driver_data].config_item1);
-	pr_info("Device config item 2 is: %d\n", pdevs_config[pdev -> id_entry -> driver_data].config_item2);
+	pr_info("Device config item 1 is: %d\n", pdevs_config[driver_data].config_item1);
+	pr_info("Device config item 2 is: %d\n", pdevs_config[driver_data].config_item2);
 
 	/* 3. Dynamically allocate device data buffer */
 	dev_data->buffer = devm_kzalloc(&pdev -> dev, dev_data->pdata.size, GFP_KERNEL);
@@ -416,16 +512,9 @@ int pcd_probe(struct platform_device *pdev)
 	/* Return 0 if execution ends without any errors */
 	pr_info("Module probe function execution successfull");
 
+
 	return 0;
 }
-
-/* Instance of paltform driver representing structure */
-struct platform_driver pcd_platform_driver = {
-  .probe = pcd_probe,
-  .remove = pcd_remove,
-	.id_table = pcdevs_ids,
-  .driver = {.name = "pchar-platform-device"}
-};
 
 /* Module initialization fucntion */
 

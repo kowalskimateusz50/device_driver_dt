@@ -8,6 +8,6 @@
 struct pcdev_platform_data
 {
 	int size;
-	int permission;
 	const char* serial_number;
+	int permission;
 };
