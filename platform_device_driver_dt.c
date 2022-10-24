@@ -350,7 +350,7 @@ int pcd_remove(struct platform_device *pdev)
 	cdev_del(&dev_data -> cdev);
 
 	/*3. Decrement devices counter */
-	pcdrv_data.total_devices++;
+	pcdrv_data.total_devices--;
 
   dev_info(&pdev->dev, "Device was removed\n");
 
@@ -441,8 +441,7 @@ int pcd_probe(struct platform_device *pdev)
 	else
 	{
 		/* Extract data from match table of device */
-		driver_data = *((int*)of_device_get_match_data(dev));
-
+		driver_data = (int)of_device_get_match_data(dev);
 	}
 	/* 2. Dynamically allocate memory for the device private data */
 
@@ -483,7 +482,7 @@ int pcd_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	/* 4. Get device number */
-	dev_data -> dev_num = pcdrv_data.device_number_base + pdev->id;
+	dev_data -> dev_num = pcdrv_data.device_number_base + pcdrv_data.total_devices;
 
 	/* 5. Initialization the cdev structure with fops */
 	cdev_init(&dev_data->cdev, &pcd_fops);
@@ -497,7 +496,7 @@ int pcd_probe(struct platform_device *pdev)
 		return ret;
 	}
 	/* 7. Populate the sysfs (/sys/class) with device information */
-	pcdrv_data.pcd_device = device_create(pcdrv_data.pcd_class, NULL, dev_data-> dev_num, NULL,"pcdev-%d", pdev-> id);
+	pcdrv_data.pcd_device = device_create(pcdrv_data.pcd_class, dev, dev_data-> dev_num, NULL,"pcdev-%d", pcdrv_data.total_devices);
 	/*7.e Erorr handling */
 	if(IS_ERR(pcdrv_data.pcd_device))
 	{
