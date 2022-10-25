@@ -415,40 +415,48 @@ int pcd_probe(struct platform_device *pdev)
 	int driver_data;
 	int ret;
 
+	/* Used to store matched entry of 'of_match_ptr' list of this driver */
+	const struct of_device_id *match;
+
 	dev_info(dev, "Device detected\n");
+	/* match will always be NULL if linux doesn't support device tree i.e CONFIG_OF is off */
+	match = of_match_device(of_match_ptr(org_pcdev_dt_match), dev);
 
-	/* Extract data from device tree */
-	pdata = pcdev_get_platdata_from_dt(dev);
-
-	/* Check if returned pointer have error code and return this error code */
-	if(IS_ERR(pdata))
+	if(match)
 	{
-		return PTR_ERR(pdata);
-	}
+		/* Extract data from device tree */
+		pdata = pcdev_get_platdata_from_dt(dev);
 
+		/* Check if returned pointer have error code and return this error code */
+		if(IS_ERR(pdata))
+		{
+			return PTR_ERR(pdata);
+		}
+		driver_data = (int)match->data;
+	}
+else
+{
+	/* Check for device setup code */
+	pdata = (struct pcdev_platform_data*)dev_get_platdata(dev);
+	driver_data = pdev -> id_entry -> driver_data;
+}
+
+	/* 1.e Error handling */
 	if(!pdata)
 	{
-		pdata = (struct pcdev_platform_data*)dev_get_platdata(dev);
-
-		/* 1.e Error handling */
-		if(!pdata)
-		{
-			pr_info("No platform data available\n");
-			return -EINVAL;
-		}
-		driver_data = pdev -> id_entry -> driver_data;
+		pr_info("No platform data available\n");
+		return -EINVAL;
 	}
 	else
 	{
 		/* Extract data from match table of device */
 		driver_data = (int)of_device_get_match_data(dev);
 	}
-	/* 2. Dynamically allocate memory for the device private data */
 
+	/* 2. Dynamically allocate memory for the device private data */
 	dev_data = devm_kzalloc(&pdev -> dev, sizeof(*pdev), GFP_KERNEL);
 
 	/* 2.e Erorr hangling for allocation */
-
 	if(!dev_data)
 	{
 		pr_info("Cannot allocate memory\n");
